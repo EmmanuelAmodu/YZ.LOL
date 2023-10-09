@@ -1,4 +1,4 @@
-module github.com/EmmanuelAmodu/yzlol
+module github.com/EmmanuelAmodu/yz.lol
 
 go 1.20
 
