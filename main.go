@@ -7,6 +7,9 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/go-playground/validator/v10"
 	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
@@ -93,8 +96,20 @@ func main() {
 		return
 	}
 
+	awsSession, err := session.NewSession(&aws.Config{
+		Region: aws.String("us-west-2")},
+	)
+
+	if err != nil {
+		log.Fatalf("failed to create aws session")
+		return
+	}
+
+	// Create S3 service client
+	svc := s3.New(awsSession)
+
 	// Create an API handler which serves data from PlanetScale.
-	handler := NewHandler(db)
+	handler := NewHandler(db, svc)
 
 	// Start an HTTP API server.
 	const addr = ":8080"
@@ -105,11 +120,12 @@ func main() {
 }
 
 type Handler struct {
-	db *gorm.DB
+	db  *gorm.DB
+	svc *s3.S3
 }
 
-func NewHandler(db *gorm.DB) http.Handler {
-	h := &Handler{db: db}
+func NewHandler(db *gorm.DB, svc *s3.S3) http.Handler {
+	h := &Handler{db: db, svc: svc}
 
 	r := mux.NewRouter()
 	r.HandleFunc("/yizz", h.getYizz).Methods(http.MethodGet)
