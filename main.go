@@ -82,6 +82,7 @@ func main() {
 	db, err := gorm.Open(mysql.Open(os.Getenv("DSN")), &gorm.Config{
 		DisableForeignKeyConstraintWhenMigrating: true,
 	})
+
 	if err != nil {
 		log.Fatalf("failed to connect to PlanetScale: %v", err)
 	}
@@ -107,6 +108,22 @@ func main() {
 
 	// Create S3 service client
 	svc := s3.New(awsSession)
+
+	// check if bucket exists and create if it doesn't
+	_, err = svc.HeadBucket(&s3.HeadBucketInput{
+		Bucket: aws.String("yizz-media"),
+	})
+
+	if err != nil {
+		_, err = svc.CreateBucket(&s3.CreateBucketInput{
+			Bucket: aws.String("yizz-media"),
+		})
+
+		if err != nil {
+			log.Fatalf("failed to create bucket")
+			return
+		}
+	}
 
 	// Create an API handler which serves data from PlanetScale.
 	handler := NewHandler(db, svc)
