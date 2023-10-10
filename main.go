@@ -59,7 +59,6 @@ type CreateYizzRequestBody struct {
 type CreateMediaRequestBody struct {
 	File      string    `json:"file"`
 	MediaType MediaType `json:"mediaType"`
-	YizzID    uint64    `json:"yizzId"`
 }
 
 const (
@@ -70,6 +69,7 @@ const (
 	InvalidInputData        = "Invalid input data"
 	DatabaseCreateError     = "Database create error"
 	JsonEncodingFailedError = "Json Encoding Failed"
+	YizzMediaBucket         = "yizz-media"
 )
 
 func main() {
@@ -111,12 +111,12 @@ func main() {
 
 	// check if bucket exists and create if it doesn't
 	_, err = svc.HeadBucket(&s3.HeadBucketInput{
-		Bucket: aws.String("yizz-media"),
+		Bucket: aws.String(YizzMediaBucket),
 	})
 
 	if err != nil {
 		_, err = svc.CreateBucket(&s3.CreateBucketInput{
-			Bucket: aws.String("yizz-media"),
+			Bucket: aws.String(YizzMediaBucket),
 		})
 
 		if err != nil {
@@ -149,7 +149,7 @@ func NewHandler(db *gorm.DB, svc *s3.S3) http.Handler {
 	r.HandleFunc("/yizz", h.createYizz).Methods(http.MethodPost)
 
 	r.HandleFunc("/media", h.getMedia).Methods(http.MethodGet)
-	r.HandleFunc("/media", h.createMedia).Methods(http.MethodPost)
+	r.HandleFunc("/media", h.streamMediaToS3).Methods(http.MethodPost)
 
 	return r
 }
@@ -216,35 +216,51 @@ func (h *Handler) createYizz(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Handler) createMedia(w http.ResponseWriter, r *http.Request) {
-	// Decode the request body into a struct.
-	var body CreateMediaRequestBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, InvalidJSONInput, StatusBadRequest)
+func (h *Handler) streamMediaToS3(w http.ResponseWriter, r *http.Request) {
+	// Parse the multipart form data.
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		http.Error(w, "failed to parse multipart form data", http.StatusBadRequest)
 		return
 	}
 
-	// Validate the request body.
-	validate = validator.New()
-	if err := validate.Struct(&body); err != nil {
-		http.Error(w, InvalidInputData, StatusBadRequest)
+	// Get the file from the request body.
+	file, handler, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "failed to get file from request body", http.StatusBadRequest)
 		return
 	}
 
+	defer file.Close()
+
+	// Upload the file to S3.
+	_, err = h.svc.PutObject(&s3.PutObjectInput{
+		Bucket: aws.String("yizz-media"),
+		Key:    aws.String(handler.Filename),
+		Body:   file,
+	})
+
+	if err != nil {
+		http.Error(w, "failed to upload file to S3", http.StatusInternalServerError)
+		return
+	}
+
+	// Create a new media object.
 	media := Media{
-		Type:   MediaType(body.MediaType),
-		File:   body.File,
-		YizzID: body.YizzID,
+		Type: MediaType(r.FormValue("mediaType")),
+		File: handler.Filename,
 	}
+
+	// Save the media object to the database.
 	result := h.db.Create(&media)
 	if result.Error != nil {
-		http.Error(w, DatabaseCreateError, StatusServerError)
+		http.Error(w, "failed to save media to database", http.StatusInternalServerError)
 		return
 	}
 
-	// Return the created Yizz.
+	// Return the created media object.
 	encoder := json.NewEncoder(w)
 	if err := encoder.Encode(media); err != nil {
-		http.Error(w, JsonEncodingFailedError, http.StatusInternalServerError)
+		http.Error(w, "failed to encode media object", http.StatusInternalServerError)
+		return
 	}
 }
