@@ -6,10 +6,13 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/dgrijalva/jwt-go"
 	"github.com/go-playground/validator/v10"
 	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
@@ -24,11 +27,11 @@ type User struct {
 	gorm.Model
 	ID       uint64 `gorm:"primaryKey"`
 	Password string `gorm:"column:password"`
+	Email    string `gorm:"column:email;UNIQUE_INDEX:compositeindex;index;not null"`
+	Phone    string `gorm:"column:phone;UNIQUE_INDEX:compositeindex;index;not null"`
+	UserName string `gorm:"column:userName;UNIQUE_INDEX:compositeindex;index;not null"`
 	Yizz     []Yizz
 	Media    []Media
-	Email    string `gorm:"column:email"`
-	Phone    string `gorm:"column:phone"`
-	UserName string `gorm:"column:userName;UNIQUE_INDEX:compositeindex;index;not null"`
 }
 
 type Yizz struct {
@@ -75,6 +78,13 @@ type CreateMediaRequestBody struct {
 }
 
 type CreateUserRequestBody struct {
+	Password string `json:"password"`
+	Email    string `json:"email"`
+	Phone    string `json:"phone"`
+	UserName string `json:"userName"`
+}
+
+type AuthenticateUserRequestBody struct {
 	Password string `json:"password"`
 	Email    string `json:"email"`
 	Phone    string `json:"phone"`
@@ -174,6 +184,8 @@ func NewHandler(db *gorm.DB, svc *s3.S3) http.Handler {
 	r.HandleFunc("/user/all", h.getUsers).Methods(http.MethodGet)
 	r.HandleFunc("/user", h.createUser).Methods(http.MethodPost)
 
+	r.HandleFunc("/login", h.login).Methods(http.MethodPost)
+
 	r.HandleFunc("/yizz", h.getYizz).Methods(http.MethodGet)
 	r.HandleFunc("/yizz", h.createYizz).Methods(http.MethodPost)
 
@@ -181,6 +193,50 @@ func NewHandler(db *gorm.DB, svc *s3.S3) http.Handler {
 	r.HandleFunc("/media", h.uploadMedia).Methods(http.MethodPost)
 
 	return r
+}
+
+func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
+	// Should fetch User from database by username
+	var authenticateUserRequestBody AuthenticateUserRequestBody
+
+	if err := json.NewDecoder(r.Body).Decode(&authenticateUserRequestBody); err != nil {
+		http.Error(w, InvalidJSONInput, StatusBadRequest)
+		return
+	}
+
+	// Validate the request body.
+	validate = validator.New()
+	if err := validate.Struct(&authenticateUserRequestBody); err != nil {
+		http.Error(w, InvalidInputData, StatusBadRequest)
+		return
+	}
+
+	var user User
+	h.db.Where(
+		"userName = ? OR email = ? OR phone = ?",
+		authenticateUserRequestBody.UserName,
+		authenticateUserRequestBody.Email,
+		authenticateUserRequestBody.Phone,
+	).First(&user)
+
+	if !verifyPassword(authenticateUserRequestBody.Password, user.Password) {
+		http.Error(w, "invalid Auth data", http.StatusBadRequest)
+		return
+	}
+
+	token, err := generateToken(user)
+	if err != nil {
+		http.Error(w, "failed to generate token", http.StatusInternalServerError)
+		return
+	}
+
+	// append token to response header
+	w.Header().Set("Authorization", token)
+
+	encoder := json.NewEncoder(w)
+	if err := encoder.Encode(user); err != nil {
+		http.Error(w, JsonEncodingFailedError, http.StatusInternalServerError)
+	}
 }
 
 func (h *Handler) getUserByProfile(w http.ResponseWriter, r *http.Request) {
@@ -379,4 +435,38 @@ func hashPassword(password string) (string, error) {
 
 	// Return the hashed password as a string.
 	return string(hash), nil
+}
+
+func verifyPassword(password string, hash string) bool {
+	// Convert the hash to a byte slice.
+	hashBytes := []byte(hash)
+
+	// Compare the password with the hash.
+	err := bcrypt.CompareHashAndPassword(hashBytes, []byte(password))
+	return err == nil
+}
+
+func generateToken(user User) (string, error) {
+	// Set the expiration time for the token.
+	expirationTime := time.Now().Add(24 * time.Hour)
+
+	// Create the claims for the token.
+	claims := &jwt.StandardClaims{
+		ExpiresAt: expirationTime.Unix(),
+		Issuer:    "my-app",
+		Subject:   strconv.FormatUint(user.ID, 10),
+	}
+
+	// Create the token with the claims.
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+
+	// Sign the token with a secret key.
+	secretKey := []byte("my-secret-key")
+	tokenString, err := token.SignedString(secretKey)
+	if err != nil {
+		return "", err
+	}
+
+	// Return the token as a string.
+	return tokenString, nil
 }
