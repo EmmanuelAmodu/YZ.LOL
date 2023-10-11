@@ -19,12 +19,30 @@ import (
 
 var validate *validator.Validate
 
+type User struct {
+	gorm.Model
+	ID          uint64 `gorm:"primaryKey"`
+	Password    string `gorm:"column:password"`
+	Yizz        []Yizz
+	Media       []Media
+	UserProfile UserProfile
+}
+
+type UserProfile struct {
+	gorm.Model
+	ID       uint64 `gorm:"primaryKey"`
+	Email    string `gorm:"column:email"`
+	Phone    string `gorm:"column:phone"`
+	UserId   uint64 `gorm:"column:userId;UNIQUE_INDEX:compositeindex;index;not null"`
+	UserName string `gorm:"column:userName"`
+}
+
 type Yizz struct {
 	gorm.Model
-	ID   uint64 `gorm:"primaryKey"`
-	Text string `gorm:"column:text"`
-	// UserId uint64 `gorm:"column:userId"`
-	Media []Media
+	ID     uint64 `gorm:"primaryKey"`
+	Text   string `gorm:"column:text"`
+	UserId uint64 `gorm:"column:userId;UNIQUE_INDEX:compositeindex;index;not null"`
+	Media  []Media
 }
 
 type Media struct {
@@ -32,7 +50,8 @@ type Media struct {
 	ID     uint64    `gorm:"primaryKey"`
 	Type   MediaType `gorm:"type:enum('VIDEO', 'AUDIO', 'IMAGE');column:type"`
 	File   string    `gorm:"column:file"`
-	YizzID uint64    `gorm:"column:yizzId"`
+	UserId uint64    `gorm:"column:userId;UNIQUE_INDEX:compositeindex;index;not null"`
+	YizzID uint64    `gorm:"column:yizzId;index;not null"`
 }
 
 type MediaType string
