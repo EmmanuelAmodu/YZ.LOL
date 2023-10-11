@@ -13,6 +13,7 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
@@ -21,27 +22,20 @@ var validate *validator.Validate
 
 type User struct {
 	gorm.Model
-	ID          uint64 `gorm:"primaryKey"`
-	Password    string `gorm:"column:password"`
-	Yizz        []Yizz
-	Media       []Media
-	UserProfile UserProfile
-}
-
-type UserProfile struct {
-	gorm.Model
 	ID       uint64 `gorm:"primaryKey"`
+	Password string `gorm:"column:password"`
+	Yizz     []Yizz
+	Media    []Media
 	Email    string `gorm:"column:email"`
 	Phone    string `gorm:"column:phone"`
-	UserId   uint64 `gorm:"column:userId;UNIQUE_INDEX:compositeindex;index;not null"`
-	UserName string `gorm:"column:userName"`
+	UserName string `gorm:"column:userName;UNIQUE_INDEX:compositeindex;index;not null"`
 }
 
 type Yizz struct {
 	gorm.Model
 	ID     uint64 `gorm:"primaryKey"`
 	Text   string `gorm:"column:text"`
-	UserId uint64 `gorm:"column:userId;UNIQUE_INDEX:compositeindex;index;not null"`
+	UserId uint64 `gorm:"column:userId;index;not null"`
 	Media  []Media
 }
 
@@ -50,7 +44,7 @@ type Media struct {
 	ID     uint64    `gorm:"primaryKey"`
 	Type   MediaType `gorm:"type:enum('VIDEO', 'AUDIO', 'IMAGE');column:type"`
 	File   string    `gorm:"column:file"`
-	UserId uint64    `gorm:"column:userId;UNIQUE_INDEX:compositeindex;index;not null"`
+	UserId uint64    `gorm:"column:userId;index;not null"`
 	YizzID uint64    `gorm:"column:yizzId;index;not null"`
 }
 
@@ -78,6 +72,13 @@ type CreateYizzRequestBody struct {
 type CreateMediaRequestBody struct {
 	File      string    `json:"file"`
 	MediaType MediaType `json:"mediaType"`
+}
+
+type CreateUserRequestBody struct {
+	Password string `json:"password"`
+	Email    string `json:"email"`
+	Phone    string `json:"phone"`
+	UserName string `json:"userName"`
 }
 
 const (
@@ -164,13 +165,87 @@ func NewHandler(db *gorm.DB, svc *s3.S3) http.Handler {
 	h := &Handler{db: db, svc: svc}
 
 	r := mux.NewRouter()
+	r.HandleFunc("/user", h.getUserByProfile).Methods(http.MethodGet)
+	r.HandleFunc("/user/all", h.getUsers).Methods(http.MethodGet)
+	r.HandleFunc("/user", h.createUser).Methods(http.MethodPost)
+
 	r.HandleFunc("/yizz", h.getYizz).Methods(http.MethodGet)
 	r.HandleFunc("/yizz", h.createYizz).Methods(http.MethodPost)
 
 	r.HandleFunc("/media", h.getMedia).Methods(http.MethodGet)
-	r.HandleFunc("/media", h.streamMediaToS3).Methods(http.MethodPost)
+	r.HandleFunc("/media", h.uploadMedia).Methods(http.MethodPost)
 
 	return r
+}
+
+func (h *Handler) getUserByProfile(w http.ResponseWriter, r *http.Request) {
+	// Should fetch User from database by username
+	var user User
+	h.db.First(&user, "user_name = ?", r.URL.Query().Get("userName"))
+	encoder := json.NewEncoder(w)
+	if err := encoder.Encode(user); err != nil {
+		http.Error(w, JsonEncodingFailedError, http.StatusInternalServerError)
+	}
+}
+
+func (h *Handler) getUsers(w http.ResponseWriter, r *http.Request) {
+	// Should fetch User from database
+	var user []User
+	result := h.db.Find(&user)
+	if result.Error != nil {
+		http.Error(w, result.Error.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Return the fetched User.
+	encoder := json.NewEncoder(w)
+	if err := encoder.Encode(user); err != nil {
+		http.Error(w, JsonEncodingFailedError, http.StatusInternalServerError)
+	}
+}
+
+func (h *Handler) createUser(w http.ResponseWriter, r *http.Request) {
+	var createUserRequestBody CreateUserRequestBody
+	// Decode the request body into a struct.
+	if err := json.NewDecoder(r.Body).Decode(&createUserRequestBody); err != nil {
+		http.Error(w, InvalidJSONInput, StatusBadRequest)
+		return
+	}
+
+	// Validate the request body.
+	validate = validator.New()
+	if err := validate.Struct(&createUserRequestBody); err != nil {
+		http.Error(w, InvalidInputData, StatusBadRequest)
+		return
+	}
+
+	// hash password
+	hashPassword, err := hashPassword(createUserRequestBody.Password)
+	if err != nil {
+		http.Error(w, "failed to hash password", http.StatusInternalServerError)
+		return
+	}
+
+	// Create a new User object.
+	user := User{
+		Password: hashPassword,
+		Email:    createUserRequestBody.Email,
+		Phone:    createUserRequestBody.Phone,
+		UserName: createUserRequestBody.UserName,
+	}
+
+	// Create a new User in the database.
+	result := h.db.Create(&user)
+	if result.Error != nil {
+		http.Error(w, DatabaseCreateError, StatusServerError)
+		return
+	}
+
+	// Return the created User.
+	encoder := json.NewEncoder(w)
+	if err := encoder.Encode(user); err != nil {
+		http.Error(w, JsonEncodingFailedError, http.StatusInternalServerError)
+	}
 }
 
 func (h *Handler) getYizz(w http.ResponseWriter, r *http.Request) {
@@ -235,7 +310,7 @@ func (h *Handler) createYizz(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Handler) streamMediaToS3(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) uploadMedia(w http.ResponseWriter, r *http.Request) {
 	// Parse the multipart form data.
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		http.Error(w, "failed to parse multipart form data", http.StatusBadRequest)
@@ -282,4 +357,21 @@ func (h *Handler) streamMediaToS3(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to encode media object", http.StatusInternalServerError)
 		return
 	}
+}
+
+func hashPassword(password string) (string, error) {
+	// Generate a salt for the hash.
+	salt, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return "", err
+	}
+
+	// Generate the hash for the password.
+	hash, err := bcrypt.GenerateFromPassword(salt, bcrypt.DefaultCost)
+	if err != nil {
+		return "", err
+	}
+
+	// Return the hashed password as a string.
+	return string(hash), nil
 }
