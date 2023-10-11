@@ -107,6 +107,11 @@ func main() {
 		log.Fatalf("failed to connect to PlanetScale: %v", err)
 	}
 
+	if err := db.AutoMigrate(&User{}); err != nil {
+		log.Fatalf("failed to migrate User table")
+		return
+	}
+
 	if err := db.AutoMigrate(&Yizz{}); err != nil {
 		log.Fatalf("failed to migrate yizz table")
 		return
