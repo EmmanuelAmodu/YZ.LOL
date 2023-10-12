@@ -184,21 +184,19 @@ func NewHandler(db *gorm.DB, svc *s3.S3) http.Handler {
 
 	router := mux.NewRouter()
 	router.HandleFunc("/login", h.login).Methods(http.MethodPost)
+	router.HandleFunc("/user", h.createUser).Methods(http.MethodPost)
+	router.HandleFunc("/user", h.getUserByProfile).Methods(http.MethodGet)
 
-	userSubRouter := router.PathPrefix("/user/").Subrouter()
-	userSubRouter.Use(validateTokenMiddleware)
+	protectedSubRouter := router.PathPrefix("/p/").Subrouter()
+	protectedSubRouter.Use(validateTokenMiddleware)
 
-	userSubRouter.HandleFunc("/user", h.getUserByProfile).Methods(http.MethodGet)
-	userSubRouter.HandleFunc("/user/all", h.getUsers).Methods(http.MethodGet)
-	userSubRouter.HandleFunc("/user", h.createUser).Methods(http.MethodPost)
+	protectedSubRouter.HandleFunc("p/user", h.getUserByProfile).Methods(http.MethodGet)
+	protectedSubRouter.HandleFunc("p/user/all", h.getUsers).Methods(http.MethodGet)
 
-	yizzSubRouter := router.PathPrefix("/yizz/").Subrouter()
-	yizzSubRouter.Use(validateTokenMiddleware)
-
-	yizzSubRouter.HandleFunc("/yizz", h.getYizz).Methods(http.MethodGet)
-	yizzSubRouter.HandleFunc("/yizz", h.createYizz).Methods(http.MethodPost)
-	yizzSubRouter.HandleFunc("/yizz/media", h.getMedia).Methods(http.MethodGet)
-	yizzSubRouter.HandleFunc("/yizz/media", h.uploadMedia).Methods(http.MethodPost)
+	protectedSubRouter.HandleFunc("p/yizz", h.getYizz).Methods(http.MethodGet)
+	protectedSubRouter.HandleFunc("p/yizz", h.createYizz).Methods(http.MethodPost)
+	protectedSubRouter.HandleFunc("p/yizz/media", h.getMedia).Methods(http.MethodGet)
+	protectedSubRouter.HandleFunc("p/yizz/media", h.uploadMedia).Methods(http.MethodPost)
 
 	return router
 }
