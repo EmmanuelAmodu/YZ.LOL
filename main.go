@@ -459,7 +459,7 @@ func generateToken(user User) (string, error) {
 	// Create the claims for the token.
 	claims := &jwt.StandardClaims{
 		ExpiresAt: expirationTime.Unix(),
-		Issuer:    "my-app",
+		Issuer:    "yx.lol",
 		Subject:   strconv.FormatUint(user.ID, 10),
 	}
 
@@ -467,7 +467,7 @@ func generateToken(user User) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 
 	// Sign the token with a secret key.
-	secretKey := []byte("my-secret-key")
+	secretKey := []byte(os.Getenv("JWT_SECRET"))
 	tokenString, err := token.SignedString(secretKey)
 	if err != nil {
 		return "", err
@@ -501,7 +501,7 @@ func setUserIDInContext(ctx context.Context, userID string) context.Context {
 func validateToken(tokenString string) (*jwt.StandardClaims, error) {
 	// Parse the token.
 	token, err := jwt.ParseWithClaims(tokenString, &jwt.StandardClaims{}, func(token *jwt.Token) (interface{}, error) {
-		return []byte("my-secret-key"), nil
+		return []byte(os.Getenv("JWT_SECRET")), nil
 	})
 
 	if err != nil {
