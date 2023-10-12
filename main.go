@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql/driver"
 	"encoding/json"
 	"log"
@@ -52,6 +53,8 @@ type Media struct {
 }
 
 type MediaType string
+
+type contextKey string
 
 const (
 	VIDEO MediaType = "VIDEO"
@@ -179,20 +182,25 @@ type Handler struct {
 func NewHandler(db *gorm.DB, svc *s3.S3) http.Handler {
 	h := &Handler{db: db, svc: svc}
 
-	r := mux.NewRouter()
-	r.HandleFunc("/user", h.getUserByProfile).Methods(http.MethodGet)
-	r.HandleFunc("/user/all", h.getUsers).Methods(http.MethodGet)
-	r.HandleFunc("/user", h.createUser).Methods(http.MethodPost)
+	router := mux.NewRouter()
+	router.HandleFunc("/login", h.login).Methods(http.MethodPost)
 
-	r.HandleFunc("/login", h.login).Methods(http.MethodPost)
+	userSubRouter := router.PathPrefix("/user/").Subrouter()
+	userSubRouter.Use(validateTokenMiddleware)
 
-	r.HandleFunc("/yizz", h.getYizz).Methods(http.MethodGet)
-	r.HandleFunc("/yizz", h.createYizz).Methods(http.MethodPost)
+	userSubRouter.HandleFunc("/user", h.getUserByProfile).Methods(http.MethodGet)
+	userSubRouter.HandleFunc("/user/all", h.getUsers).Methods(http.MethodGet)
+	userSubRouter.HandleFunc("/user", h.createUser).Methods(http.MethodPost)
 
-	r.HandleFunc("/media", h.getMedia).Methods(http.MethodGet)
-	r.HandleFunc("/media", h.uploadMedia).Methods(http.MethodPost)
+	yizzSubRouter := router.PathPrefix("/yizz/").Subrouter()
+	yizzSubRouter.Use(validateTokenMiddleware)
 
-	return r
+	yizzSubRouter.HandleFunc("/yizz", h.getYizz).Methods(http.MethodGet)
+	yizzSubRouter.HandleFunc("/yizz", h.createYizz).Methods(http.MethodPost)
+	yizzSubRouter.HandleFunc("/yizz/media", h.getMedia).Methods(http.MethodGet)
+	yizzSubRouter.HandleFunc("/yizz/media", h.uploadMedia).Methods(http.MethodPost)
+
+	return router
 }
 
 func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
@@ -469,4 +477,39 @@ func generateToken(user User) (string, error) {
 
 	// Return the token as a string.
 	return tokenString, nil
+}
+
+func validateTokenMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Validate the token.
+		claims, err := validateToken(r.Header.Get("Authorization"))
+		if err != nil {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		// Set the user ID in the request context.
+		r = r.WithContext(setUserIDInContext(r.Context(), claims.Subject))
+
+		// Call the next handler.
+		next.ServeHTTP(w, r)
+	})
+}
+
+func setUserIDInContext(ctx context.Context, userID string) context.Context {
+	return context.WithValue(ctx, contextKey("userID"), userID)
+}
+
+func validateToken(tokenString string) (*jwt.StandardClaims, error) {
+	// Parse the token.
+	token, err := jwt.ParseWithClaims(tokenString, &jwt.StandardClaims{}, func(token *jwt.Token) (interface{}, error) {
+		return []byte("my-secret-key"), nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Return the claims.
+	return token.Claims.(*jwt.StandardClaims), nil
 }
