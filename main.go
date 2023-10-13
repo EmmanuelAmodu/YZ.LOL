@@ -62,11 +62,6 @@ const (
 	IMAGE MediaType = "IMAGE"
 )
 
-func (ct *MediaType) Scan(value interface{}) error {
-	*ct = MediaType(value.([]byte))
-	return nil
-}
-
 func (ct MediaType) Value() (driver.Value, error) {
 	return string(ct), nil
 }
@@ -363,7 +358,7 @@ func (h *Handler) createYizz(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create a new Yizz in the database.
-	yizz := Yizz{Text: body.Text}
+	yizz := Yizz{Text: body.Text, UserId: r.Context().Value(contextKey("userID")).(uint64)}
 	result := h.db.Create(&yizz)
 	if result.Error != nil {
 		http.Error(w, DatabaseCreateError, StatusServerError)
@@ -407,8 +402,9 @@ func (h *Handler) uploadMedia(w http.ResponseWriter, r *http.Request) {
 
 	// Create a new media object.
 	media := Media{
-		Type: MediaType(r.FormValue("mediaType")),
-		File: handler.Filename,
+		Type:   MediaType(r.FormValue("mediaType")),
+		File:   handler.Filename,
+		UserId: r.Context().Value(contextKey("userID")).(uint64),
 	}
 
 	// Save the media object to the database.
