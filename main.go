@@ -28,10 +28,10 @@ var validate *validator.Validate
 type User struct {
 	gorm.Model
 	ID       uint64 `gorm:"primaryKey"`
-	Password string `gorm:"column:password"`
-	Email    string `gorm:"column:email;UNIQUE_INDEX:compositeindex;index;not null"`
-	Phone    string `gorm:"column:phone;UNIQUE_INDEX:compositeindex;index;not null"`
-	UserName string `gorm:"column:userName;UNIQUE_INDEX:compositeindex;index;not null"`
+	Password string `gorm:"column:password;size:256"`
+	Email    string `gorm:"column:email;uniqueIndex;size:25;not null"`
+	Phone    string `gorm:"column:phone;uniqueIndex;size:20;not null"`
+	UserName string `gorm:"column:user_name;uniqueIndex;size:32;not null"`
 	Yizz     []Yizz
 	Media    []Media
 }
@@ -40,7 +40,7 @@ type Yizz struct {
 	gorm.Model
 	ID     uint64 `gorm:"primaryKey"`
 	Text   string `gorm:"column:text"`
-	UserId uint64 `gorm:"column:userId;index;not null"`
+	UserId uint64 `gorm:"column:user_id;index;not null"`
 	Media  []Media
 }
 
@@ -49,8 +49,8 @@ type Media struct {
 	ID     uint64    `gorm:"primaryKey"`
 	Type   MediaType `gorm:"type:enum('VIDEO', 'AUDIO', 'IMAGE');column:type"`
 	File   string    `gorm:"column:file"`
-	UserId uint64    `gorm:"column:userId;index;not null"`
-	YizzID uint64    `gorm:"column:yizzId;index;not null"`
+	UserId uint64    `gorm:"column:user_id;index;not null"`
+	YizzID uint64    `gorm:"column:yizz_id;index;not null"`
 }
 
 type MediaType string
@@ -233,7 +233,7 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 
 	var user User
 	h.db.Where(
-		"userName = ? OR email = ? OR phone = ?",
+		"user_name = ? OR email = ? OR phone = ?",
 		authenticateUserRequestBody.UserName,
 		authenticateUserRequestBody.Email,
 		authenticateUserRequestBody.Phone,
@@ -241,6 +241,7 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 
 	if !verifyPassword(authenticateUserRequestBody.Password, user.Password) {
 		http.Error(w, "invalid Auth data", http.StatusBadRequest)
+		fmt.Println("invalid Auth data")
 		return
 	}
 
@@ -442,14 +443,8 @@ func (h *Handler) uploadMedia(w http.ResponseWriter, r *http.Request) {
 }
 
 func hashPassword(password string) (string, error) {
-	// Generate a salt for the hash.
-	salt, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		return "", err
-	}
-
-	// Generate the hash for the password.
-	hash, err := bcrypt.GenerateFromPassword(salt, bcrypt.DefaultCost)
+	// Hash the password.
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return "", err
 	}
@@ -459,12 +454,13 @@ func hashPassword(password string) (string, error) {
 }
 
 func verifyPassword(password string, hash string) bool {
-	// Convert the hash to a byte slice.
-	hashBytes := []byte(hash)
-
 	// Compare the password with the hash.
-	err := bcrypt.CompareHashAndPassword(hashBytes, []byte(password))
-	return err == nil
+	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)); err != nil {
+		return false
+	}
+
+	// Return true if the password matches the hash.
+	return true
 }
 
 func generateToken(user User) (string, error) {
