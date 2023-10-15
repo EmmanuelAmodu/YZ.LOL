@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql/driver"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -106,27 +107,9 @@ func main() {
 		log.Fatalf("failed to load environment variables: %v", err)
 	}
 
-	// Connect to PlanetScale database using DSN environment variable.
-	db, err := gorm.Open(mysql.Open(os.Getenv("DSN")), &gorm.Config{
-		DisableForeignKeyConstraintWhenMigrating: true,
-	})
-
+	db, err := setUpDB()
 	if err != nil {
-		log.Fatalf("failed to connect to PlanetScale: %v", err)
-	}
-
-	if err := db.AutoMigrate(&User{}); err != nil {
-		log.Fatalf("failed to migrate User table")
-		return
-	}
-
-	if err := db.AutoMigrate(&Yizz{}); err != nil {
-		log.Fatalf("failed to migrate yizz table")
-		return
-	}
-
-	if err := db.AutoMigrate(&Media{}); err != nil {
-		log.Fatalf("failed to migrate Media table")
+		log.Fatalf("failed to connect to database: %v", err)
 		return
 	}
 
@@ -167,6 +150,33 @@ func main() {
 	if err := http.ListenAndServe(addr, handler); err != nil {
 		log.Fatalf("failed to serve HTTP: %v", err)
 	}
+}
+
+func setUpDB() (*gorm.DB, error) {
+	// Connect to PlanetScale database using DSN environment variable.
+	const migrationError = "failed to migrate table"
+
+	db, err := gorm.Open(mysql.Open(os.Getenv("DSN")), &gorm.Config{
+		DisableForeignKeyConstraintWhenMigrating: true,
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to open database connection: %v", err)
+	}
+
+	if err := db.AutoMigrate(&User{}); err != nil {
+		return nil, fmt.Errorf(migrationError+" User: %v", err)
+	}
+
+	if err := db.AutoMigrate(&Yizz{}); err != nil {
+		return nil, fmt.Errorf(migrationError+" table: %v", err)
+	}
+
+	if err := db.AutoMigrate(&Media{}); err != nil {
+		return nil, fmt.Errorf(migrationError+" Media: %v", err)
+	}
+
+	return db, err
 }
 
 type Handler struct {
