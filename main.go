@@ -113,32 +113,10 @@ func main() {
 		return
 	}
 
-	awsSession, err := session.NewSession(&aws.Config{
-		Region: aws.String("us-west-2")},
-	)
-
+	svc, err := awsSession()
 	if err != nil {
-		log.Fatalf("failed to create aws session")
+		log.Fatalf("failed to connect to aws: %v", err)
 		return
-	}
-
-	// Create S3 service client
-	svc := s3.New(awsSession)
-
-	// check if bucket exists and create if it doesn't
-	_, err = svc.HeadBucket(&s3.HeadBucketInput{
-		Bucket: aws.String(YizzMediaBucket),
-	})
-
-	if err != nil {
-		_, err = svc.CreateBucket(&s3.CreateBucketInput{
-			Bucket: aws.String(YizzMediaBucket),
-		})
-
-		if err != nil {
-			log.Fatalf("failed to create bucket")
-			return
-		}
 	}
 
 	// Create an API handler which serves data from PlanetScale.
@@ -177,6 +155,37 @@ func setUpDB() (*gorm.DB, error) {
 	}
 
 	return db, err
+}
+
+func awsSession() (*s3.S3, error) {
+	// Create a new AWS session.
+	sess, err := session.NewSession(&aws.Config{
+		Region: aws.String("us-west-2")},
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	// Create S3 service client
+	svc := s3.New(sess)
+
+	// check if bucket exists and create if it doesn't
+	_, err = svc.HeadBucket(&s3.HeadBucketInput{
+		Bucket: aws.String(YizzMediaBucket),
+	})
+
+	if err != nil {
+		_, err = svc.CreateBucket(&s3.CreateBucketInput{
+			Bucket: aws.String(YizzMediaBucket),
+		})
+
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return svc, nil
 }
 
 type Handler struct {
