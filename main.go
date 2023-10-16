@@ -83,6 +83,12 @@ type CreateUserRequestBody struct {
 	UserName string `json:"userName"`
 }
 
+type UserResponseBody struct {
+	Email    string `json:"email"`
+	Phone    string `json:"phone"`
+	UserName string `json:"userName"`
+}
+
 type AuthenticateUserRequestBody struct {
 	Password string `json:"password"`
 	Email    string `json:"email"`
@@ -251,11 +257,17 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	response := UserResponseBody{
+		Email:    user.Email,
+		Phone:    user.Phone,
+		UserName: user.UserName,
+	}
+
 	// append token to response header
 	w.Header().Set("Authorization", token)
 
 	encoder := json.NewEncoder(w)
-	if err := encoder.Encode(user); err != nil {
+	if err := encoder.Encode(response); err != nil {
 		http.Error(w, JsonEncodingFailedError, http.StatusInternalServerError)
 	}
 }
@@ -323,9 +335,15 @@ func (h *Handler) createUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	response := UserResponseBody{
+		Email:    user.Email,
+		Phone:    user.Phone,
+		UserName: user.UserName,
+	}
+
 	// Return the created User.
 	encoder := json.NewEncoder(w)
-	if err := encoder.Encode(user); err != nil {
+	if err := encoder.Encode(response); err != nil {
 		http.Error(w, JsonEncodingFailedError, http.StatusInternalServerError)
 	}
 }
