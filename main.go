@@ -205,18 +205,18 @@ func NewHandler(db *gorm.DB, svc *s3.S3) http.Handler {
 	router := mux.NewRouter()
 	router.HandleFunc("/login", h.login).Methods(http.MethodPost)
 	router.HandleFunc("/user", h.createUser).Methods(http.MethodPost)
-	router.HandleFunc("/user", h.getUserByProfile).Methods(http.MethodGet)
 
-	protectedSubRouter := router.PathPrefix("/p/").Subrouter()
-	protectedSubRouter.Use(validateTokenMiddleware)
+	// Add middleware to authenticate requests for routes with /p/ path
+	pRouter := router.PathPrefix("/p").Subrouter()
+	pRouter.Use(validateTokenMiddleware)
 
-	protectedSubRouter.HandleFunc("p/user", h.getUserByProfile).Methods(http.MethodGet)
-	protectedSubRouter.HandleFunc("p/user/all", h.getUsers).Methods(http.MethodGet)
+	pRouter.HandleFunc("/user", h.getUserByProfile).Methods(http.MethodGet)
+	pRouter.HandleFunc("/user/all", h.getUsers).Methods(http.MethodGet)
 
-	protectedSubRouter.HandleFunc("p/yizz", h.getYizz).Methods(http.MethodGet)
-	protectedSubRouter.HandleFunc("p/yizz", h.createYizz).Methods(http.MethodPost)
-	protectedSubRouter.HandleFunc("p/yizz/media", h.getMedia).Methods(http.MethodGet)
-	protectedSubRouter.HandleFunc("p/yizz/media", h.uploadMedia).Methods(http.MethodPost)
+	pRouter.HandleFunc("/yizz", h.getYizz).Methods(http.MethodGet)
+	pRouter.HandleFunc("/yizz", h.createYizz).Methods(http.MethodPost)
+	pRouter.HandleFunc("/yizz/media", h.getMedia).Methods(http.MethodGet)
+	pRouter.HandleFunc("/yizz/media", h.uploadMedia).Methods(http.MethodPost)
 
 	return router
 }
@@ -275,7 +275,8 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) getUserByProfile(w http.ResponseWriter, r *http.Request) {
 	// Should fetch User from database by username
 	var user User
-	h.db.First(&user, "user_name = ?", r.URL.Query().Get("userName"))
+	h.db.First(&user, "user_name = ?", r.URL.Query()).Select("user_name", "email", "phone")
+
 	encoder := json.NewEncoder(w)
 	if err := encoder.Encode(user); err != nil {
 		http.Error(w, JsonEncodingFailedError, http.StatusInternalServerError)
@@ -285,7 +286,7 @@ func (h *Handler) getUserByProfile(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) getUsers(w http.ResponseWriter, r *http.Request) {
 	// Should fetch User from database
 	var user []User
-	result := h.db.Find(&user)
+	result := h.db.Find(&user).Select("user_name", "email", "phone")
 	if result.Error != nil {
 		http.Error(w, result.Error.Error(), http.StatusInternalServerError)
 		return
@@ -395,8 +396,15 @@ func (h *Handler) createYizz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Convert the userID to uint64
+	userID, err := strconv.ParseUint(fmt.Sprintf("%v", r.Context().Value(contextKey("userID"))), 10, 64)
+	if err != nil {
+		http.Error(w, "failed to convert userID to uint64", http.StatusInternalServerError)
+		return
+	}
+
 	// Create a new Yizz in the database.
-	yizz := Yizz{Text: body.Text, UserId: r.Context().Value(contextKey("userID")).(uint64)}
+	yizz := Yizz{Text: body.Text, UserId: userID}
 	result := h.db.Create(&yizz)
 	if result.Error != nil {
 		http.Error(w, DatabaseCreateError, StatusServerError)
@@ -438,11 +446,17 @@ func (h *Handler) uploadMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userID, err := strconv.ParseUint(fmt.Sprintf("%v", r.Context().Value(contextKey("userID"))), 10, 64)
+	if err != nil {
+		http.Error(w, "failed to convert userID to uint64", http.StatusInternalServerError)
+		return
+	}
+
 	// Create a new media object.
 	media := Media{
 		Type:   MediaType(r.FormValue("mediaType")),
 		File:   handler.Filename,
-		UserId: r.Context().Value(contextKey("userID")).(uint64),
+		UserId: userID,
 	}
 
 	// Save the media object to the database.
@@ -514,6 +528,8 @@ func validateTokenMiddleware(next http.Handler) http.Handler {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
+
+		fmt.Printf("claims: %+v\n", claims)
 
 		// Set the user ID in the request context.
 		r = r.WithContext(setUserIDInContext(r.Context(), claims.Subject))
