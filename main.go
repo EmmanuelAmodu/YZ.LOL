@@ -529,8 +529,6 @@ func validateTokenMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		fmt.Printf("claims: %+v\n", claims)
-
 		// Set the user ID in the request context.
 		r = r.WithContext(setUserIDInContext(r.Context(), claims.Subject))
 
