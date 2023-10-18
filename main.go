@@ -203,21 +203,21 @@ func NewHandler(db *gorm.DB, svc *s3.S3) http.Handler {
 	h := &Handler{db: db, svc: svc}
 
 	router := mux.NewRouter()
-	router.HandleFunc("/login", h.login).Methods(http.MethodPost)
 	router.Use(addRelevantHeadersMiddleware)
-	router.HandleFunc("/user", h.createUser).Methods(http.MethodPost)
+	router.HandleFunc("/login", h.login).Methods(http.MethodPost)
+	router.HandleFunc("/create-user", h.createUser).Methods(http.MethodPost)
 
-	// Add middleware to authenticate requests for routes with /p/ path
-	pRouter := router.PathPrefix("/p").Subrouter()
-	pRouter.Use(validateTokenMiddleware)
+	userRouter := router.PathPrefix("/user").Subrouter()
+	userRouter.Use(validateTokenMiddleware)
+	userRouter.HandleFunc("", h.getUserByProfile).Methods(http.MethodGet)
+	userRouter.HandleFunc("/all", h.getUsers).Methods(http.MethodGet)
 
-	pRouter.HandleFunc("/user", h.getUserByProfile).Methods(http.MethodGet)
-	pRouter.HandleFunc("/user/all", h.getUsers).Methods(http.MethodGet)
-
-	pRouter.HandleFunc("/yizz", h.getYizz).Methods(http.MethodGet)
-	pRouter.HandleFunc("/yizz", h.createYizz).Methods(http.MethodPost)
-	pRouter.HandleFunc("/yizz/media", h.getMedia).Methods(http.MethodGet)
-	pRouter.HandleFunc("/yizz/media", h.uploadMedia).Methods(http.MethodPost)
+	yizzRouter := router.PathPrefix("/yizz").Subrouter()
+	yizzRouter.Use(validateTokenMiddleware)
+	yizzRouter.HandleFunc("", h.getYizz).Methods(http.MethodGet)
+	yizzRouter.HandleFunc("", h.createYizz).Methods(http.MethodPost)
+	yizzRouter.HandleFunc("/media", h.getMedia).Methods(http.MethodGet)
+	yizzRouter.HandleFunc("/media", h.uploadMedia).Methods(http.MethodPost)
 
 	return router
 }
