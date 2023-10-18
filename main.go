@@ -204,6 +204,7 @@ func NewHandler(db *gorm.DB, svc *s3.S3) http.Handler {
 
 	router := mux.NewRouter()
 	router.HandleFunc("/login", h.login).Methods(http.MethodPost)
+	router.Use(addRelevantHeadersMiddleware)
 	router.HandleFunc("/user", h.createUser).Methods(http.MethodPost)
 
 	// Add middleware to authenticate requests for routes with /p/ path
@@ -493,6 +494,16 @@ func verifyPassword(password string, hash string) bool {
 
 	// Return true if the password matches the hash.
 	return true
+}
+
+func addRelevantHeadersMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Add the Content-Type header.
+		w.Header().Set("Content-Type", "application/json")
+
+		// Call the next handler.
+		next.ServeHTTP(w, r)
+	})
 }
 
 func generateToken(user User) (string, error) {
