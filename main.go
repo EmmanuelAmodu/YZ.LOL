@@ -97,14 +97,15 @@ type AuthenticateUserRequestBody struct {
 }
 
 const (
-	StatusCreated           = http.StatusCreated
-	StatusBadRequest        = http.StatusBadRequest
-	StatusServerError       = http.StatusInternalServerError
-	InvalidJSONInput        = "Invalid JSON input"
-	InvalidInputData        = "Invalid input data"
-	DatabaseCreateError     = "Database create error"
-	JsonEncodingFailedError = "Json Encoding Failed"
-	YizzMediaBucket         = "yizz-media"
+	StatusCreated                 = http.StatusCreated
+	StatusBadRequest              = http.StatusBadRequest
+	StatusServerError             = http.StatusInternalServerError
+	InvalidJSONInput              = "Invalid JSON input"
+	InvalidInputData              = "Invalid input data"
+	DatabaseCreateError           = "Database create error"
+	JsonEncodingFailedError       = "Json Encoding Failed"
+	YizzMediaBucket               = "yizz-media"
+	failedToConvertUserIdToUnit64 = "failed to convert userID to uint64"
 )
 
 func main() {
@@ -354,7 +355,7 @@ func (h *Handler) getYizz(w http.ResponseWriter, r *http.Request) {
 	// Should fetch Yizz from database
 	userID, err := strconv.ParseUint(fmt.Sprintf("%v", r.Context().Value(contextKey("userID"))), 10, 64)
 	if err != nil {
-		http.Error(w, "failed to convert userID to uint64", http.StatusInternalServerError)
+		http.Error(w, failedToConvertUserIdToUnit64, http.StatusInternalServerError)
 		return
 	}
 
@@ -376,7 +377,7 @@ func (h *Handler) getMedia(w http.ResponseWriter, r *http.Request) {
 	// Should fetch Media from database
 	userID, err := strconv.ParseUint(fmt.Sprintf("%v", r.Context().Value(contextKey("userID"))), 10, 64)
 	if err != nil {
-		http.Error(w, "failed to convert userID to uint64", http.StatusInternalServerError)
+		http.Error(w, failedToConvertUserIdToUnit64, http.StatusInternalServerError)
 		return
 	}
 
@@ -412,7 +413,7 @@ func (h *Handler) createYizz(w http.ResponseWriter, r *http.Request) {
 	// Convert the userID to uint64
 	userID, err := strconv.ParseUint(fmt.Sprintf("%v", r.Context().Value(contextKey("userID"))), 10, 64)
 	if err != nil {
-		http.Error(w, "failed to convert userID to uint64", http.StatusInternalServerError)
+		http.Error(w, failedToConvertUserIdToUnit64, http.StatusInternalServerError)
 		return
 	}
 
@@ -461,7 +462,7 @@ func (h *Handler) uploadMedia(w http.ResponseWriter, r *http.Request) {
 
 	userID, err := strconv.ParseUint(fmt.Sprintf("%v", r.Context().Value(contextKey("userID"))), 10, 64)
 	if err != nil {
-		http.Error(w, "failed to convert userID to uint64", http.StatusInternalServerError)
+		http.Error(w, failedToConvertUserIdToUnit64, http.StatusInternalServerError)
 		return
 	}
 
