@@ -352,8 +352,14 @@ func (h *Handler) createUser(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) getYizz(w http.ResponseWriter, r *http.Request) {
 	// Should fetch Yizz from database
+	userID, err := strconv.ParseUint(fmt.Sprintf("%v", r.Context().Value(contextKey("userID"))), 10, 64)
+	if err != nil {
+		http.Error(w, "failed to convert userID to uint64", http.StatusInternalServerError)
+		return
+	}
+
 	var yizz []Yizz
-	result := h.db.Find(&yizz)
+	result := h.db.Find(&yizz).Where("user_id = ?", userID)
 	if result.Error != nil {
 		http.Error(w, result.Error.Error(), http.StatusInternalServerError)
 		return
@@ -368,8 +374,14 @@ func (h *Handler) getYizz(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) getMedia(w http.ResponseWriter, r *http.Request) {
 	// Should fetch Media from database
+	userID, err := strconv.ParseUint(fmt.Sprintf("%v", r.Context().Value(contextKey("userID"))), 10, 64)
+	if err != nil {
+		http.Error(w, "failed to convert userID to uint64", http.StatusInternalServerError)
+		return
+	}
+
 	var media []Media
-	result := h.db.Find(&media)
+	result := h.db.Find(&media).Where("user_id = ?", userID)
 	if result.Error != nil {
 		http.Error(w, result.Error.Error(), http.StatusInternalServerError)
 		return
@@ -513,7 +525,7 @@ func generateToken(user User) (string, error) {
 	// Create the claims for the token.
 	claims := &jwt.StandardClaims{
 		ExpiresAt: expirationTime.Unix(),
-		Issuer:    "yx.lol",
+		Issuer:    "yz.lol",
 		Subject:   strconv.FormatUint(user.ID, 10),
 	}
 
